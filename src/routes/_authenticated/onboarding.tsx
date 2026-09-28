@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, Dumbbell, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { completeProfile, sendPhoneOtp, verifyPhoneOtp } from "@/lib/gym.functions";
+import { completeProfile, getGymBranding, sendPhoneOtp, verifyPhoneOtp } from "@/lib/gym.functions";
 import { signOut } from "@/lib/sign-out";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/_authenticated/onboarding")({
 function Onboarding() {
   const profile = Route.useLoaderData();
   const navigate = useNavigate(); const router = useRouter();
+  const loadBranding = useServerFn(getGymBranding); const { data: branding } = useQuery({ queryKey: ["gym-branding"], queryFn: () => loadBranding() });
   const send = useServerFn(sendPhoneOtp); const verify = useServerFn(verifyPhoneOtp); const save = useServerFn(completeProfile);
   const [phone, setPhone] = useState(profile.phone ?? ""); const [otp, setOtp] = useState("");
   const [sent, setSent] = useState(false); const [verified, setVerified] = useState(Boolean(profile.phone_verified_at));
@@ -46,7 +48,7 @@ function Onboarding() {
   }
 
   return <main className="min-h-screen bg-auth p-5 sm:p-10"><div className="mx-auto max-w-xl">
-    <div className="mb-8 flex items-center justify-between"><span className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={20}/></span><span className="font-display text-lg font-bold uppercase">Forge</span></span><Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button></div>
+    <div className="mb-8 flex items-center justify-between"><span className="flex items-center gap-3">{branding?.logo_url?<img src={branding.logo_url} alt="" className="size-10 rounded-md bg-white object-contain"/>:<span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={20}/></span>}<span className="font-display text-lg font-bold uppercase">{branding?.gym_name??"Forge"}</span></span><Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button></div>
     <p className="text-xs font-bold uppercase text-primary">Step 1 of 2</p>
     <h1 className="mt-2 font-display text-4xl font-bold uppercase">Complete your profile</h1>
     <p className="mt-2 text-sm text-muted-foreground">We need these details before you can choose a membership.</p>

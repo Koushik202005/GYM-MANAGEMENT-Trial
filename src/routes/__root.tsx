@@ -4,13 +4,17 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { getGymBranding } from "@/lib/gym.functions";
 
 function NotFoundComponent() {
   return (
@@ -118,8 +122,29 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <BrandingSync />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
     </QueryClientProvider>
   );
+}
+
+function BrandingSync() {
+  const loadBranding = useServerFn(getGymBranding);
+  const { data: branding } = useQuery({ queryKey: ["gym-branding"], queryFn: () => loadBranding() });
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
+  useEffect(() => {
+    if (!branding) return;
+    document.title = branding.app_title;
+    let icon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+    if (!icon) {
+      icon = document.createElement("link");
+      icon.rel = "icon";
+      document.head.append(icon);
+    }
+    icon.href = branding.logo_url ?? "/favicon.ico";
+  }, [branding?.app_title, branding?.logo_url, pathname]);
+
+  return null;
 }

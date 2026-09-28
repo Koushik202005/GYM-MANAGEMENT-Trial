@@ -6,7 +6,7 @@ import { Bell, CalendarClock, CheckCircle2, Dumbbell, Loader2, LogOut, Receipt, 
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
-import { createRazorpayOrder, quotePlan, verifyRazorpayPayment } from "@/lib/gym.functions";
+import { createRazorpayOrder, getGymBranding, quotePlan, verifyRazorpayPayment } from "@/lib/gym.functions";
 import { inr, signOut } from "@/lib/sign-out";
 import { cn } from "@/lib/utils";
 
@@ -35,13 +35,16 @@ export function MemberDashboard({ profile }: { profile: Tables<"profiles"> }) {
       return { member, plans: plans.data ?? [], memberships: memberships.data ?? [], payments: payments.data ?? [], notes: notes.data ?? [] };
     },
   });
+  const loadGymSettings = useServerFn(getGymBranding);
+  const gymSettings = useQuery({ queryKey: ["gym-branding"], queryFn: () => loadGymSettings() });
+  const gymName = gymSettings.data?.gym_name ?? "Forge Functional Fitness";
   const current = data?.memberships.find((m) => m.status === "active") ?? data?.memberships[0];
   const daysLeft = current ? Math.ceil((new Date(current.ends_on).getTime() - Date.now()) / 86400000) : null;
   const expiringSoon = daysLeft !== null && daysLeft <= 7;
 
   return <div className="min-h-screen bg-background">
     <header className="border-b border-border bg-sidebar text-sidebar-foreground"><div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
-      <span className="grid size-9 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={18}/></span><span className="font-display text-lg font-bold uppercase">Forge</span>
+      {gymSettings.data?.logo_url ? <img src={gymSettings.data.logo_url} alt="" className="size-9 rounded-md bg-white object-contain"/> : <span className="grid size-9 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={18}/></span>}<span className="font-display text-lg font-bold uppercase">{gymName}</span>
       <span className="ml-auto hidden text-sm sm:inline">{profile.display_name}</span>
       <Button variant="ghost" size="sm" onClick={signOut}><LogOut size={16}/> Sign out</Button>
     </div></header>
@@ -84,7 +87,7 @@ function PlanCard({ plan, onPaid }: { plan: Tables<"membership_plans">; onPaid: 
       const o = await order({ data: q?.couponCode ? { planId: plan.id, coupon: q.couponCode } : { planId: plan.id } });
       await loadRazorpay();
       new window.Razorpay!({
-        key: o.keyId, order_id: o.orderId, amount: o.amount, currency: "INR", name: "Forge Fitness Pal", description: plan.name,
+        key: o.keyId, order_id: o.orderId, amount: o.amount, currency: "INR", name: gymName, description: plan.name,
         prefill: { name: o.name, email: o.email, contact: o.phone }, theme: { color: "#9be22d" },
         handler: async (r: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
           try { const v = await verify({ data: { orderId: r.razorpay_order_id, paymentId: r.razorpay_payment_id, signature: r.razorpay_signature } }); setDone(v.paymentId); onPaid(); router.invalidate(); }

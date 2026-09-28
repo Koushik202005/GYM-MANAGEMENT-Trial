@@ -472,6 +472,7 @@ export type Database = {
       gym_settings: {
         Row: {
           address: string | null
+          app_title: string
           booking_window_days: number
           contact_email: string | null
           contact_phone: string | null
@@ -479,11 +480,13 @@ export type Database = {
           default_cancellation_minutes: number
           gym_name: string
           id: string
+          logo_url: string | null
           timezone: string
           updated_at: string
         }
         Insert: {
           address?: string | null
+          app_title?: string
           booking_window_days?: number
           contact_email?: string | null
           contact_phone?: string | null
@@ -491,11 +494,13 @@ export type Database = {
           default_cancellation_minutes?: number
           gym_name?: string
           id?: string
+          logo_url?: string | null
           timezone?: string
           updated_at?: string
         }
         Update: {
           address?: string | null
+          app_title?: string
           booking_window_days?: number
           contact_email?: string | null
           contact_phone?: string | null
@@ -503,6 +508,7 @@ export type Database = {
           default_cancellation_minutes?: number
           gym_name?: string
           id?: string
+          logo_url?: string | null
           timezone?: string
           updated_at?: string
         }

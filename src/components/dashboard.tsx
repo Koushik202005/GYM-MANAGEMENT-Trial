@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import {
   Activity, Bell, CalendarDays, ChevronRight, CircleDollarSign, Clock3, CreditCard,
   Dumbbell, Fingerprint, LayoutDashboard, LogOut, Menu, Search, Settings, ShieldCheck,
@@ -10,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { signOut } from "@/lib/sign-out";
 import { MembersAdmin, PaymentsAdmin, PlansAdmin } from "@/components/admin-modules";
 import { InactiveMembers, NotificationsBell, useAdminRealtime, useLiveStats } from "@/components/admin-live";
+import { SettingsAdmin } from "@/components/settings-admin";
+import { getGymBranding } from "@/lib/gym.functions";
 
 const nav = [
   ["Overview", LayoutDashboard], ["Members", Users], ["Inactive", UserX], ["Memberships", WalletCards],
@@ -39,11 +43,14 @@ export function Dashboard({ name = "Admin" }: { name?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   useAdminRealtime();
   const stats = useLiveStats();
+  const loadGymSettings = useServerFn(getGymBranding);
+  const gymSettings = useQuery({ queryKey: ["gym-branding"], queryFn: () => loadGymSettings() });
+  const gymName = gymSettings.data?.gym_name ?? "Forge Functional Fitness";
 
   return <div className="min-h-screen bg-background text-foreground">
     <aside className={cn("fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar text-sidebar-foreground transition-transform lg:translate-x-0", mobileOpen ? "translate-x-0" : "-translate-x-full")}>
       <div className="flex h-20 items-center justify-between border-b border-sidebar-border px-5">
-        <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={20}/></span><div><p className="font-display text-lg font-bold uppercase">Forge</p><p className="text-xs text-sidebar-muted">Functional Fitness</p></div></div>
+        <div className="flex min-w-0 items-center gap-3">{gymSettings.data?.logo_url ? <img src={gymSettings.data.logo_url} alt="" className="size-10 shrink-0 rounded-md bg-white object-contain"/> : <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={20}/></span>}<div className="min-w-0"><p className="truncate font-display text-lg font-bold uppercase">{gymName}</p><p className="truncate text-xs text-sidebar-muted">{gymSettings.data?.app_title ?? "Gym management"}</p></div></div>
         <Button aria-label="Close menu" variant="ghost" size="icon" className="lg:hidden" onClick={()=>setMobileOpen(false)}><X size={18}/></Button>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Main navigation">
@@ -61,9 +68,9 @@ export function Dashboard({ name = "Admin" }: { name?: string }) {
       </header>
 
       <div className="mx-auto max-w-[1500px] p-4 md:p-8">
-        <section className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="mb-2 text-xs font-bold uppercase text-primary">Saturday, 26 September</p><h1 className="font-display text-3xl font-bold uppercase md:text-4xl">{active}</h1><p className="mt-2 text-sm text-muted-foreground">Here’s what’s happening at Forge today.</p></div><div className="flex gap-2"><Button variant="outline"><CalendarDays size={17}/> Schedule</Button><Button variant="secondary"><Activity size={17}/> Live floor</Button></div></section>
+        <section className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="mb-2 text-xs font-bold uppercase text-primary">Saturday, 26 September</p><h1 className="font-display text-3xl font-bold uppercase md:text-4xl">{active}</h1><p className="mt-2 text-sm text-muted-foreground">Here’s what’s happening at {gymName} today.</p></div><div className="flex gap-2"><Button variant="outline"><CalendarDays size={17}/> Schedule</Button><Button variant="secondary"><Activity size={17}/> Live floor</Button></div></section>
 
-        {active === "Memberships" ? <PlansAdmin/> : active === "Members" ? <MembersAdmin/> : active === "Payments" ? <PaymentsAdmin/> : active === "Inactive" ? <InactiveMembers/> : active !== "Overview" ? <ModuleView title={active}/> : <>
+        {active === "Settings" ? <SettingsAdmin/> : active === "Memberships" ? <PlansAdmin/> : active === "Members" ? <MembersAdmin/> : active === "Payments" ? <PaymentsAdmin/> : active === "Inactive" ? <InactiveMembers/> : active !== "Overview" ? <ModuleView title={active}/> : <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Metric icon={CircleDollarSign} label="Monthly revenue" value="₹4.82L" note="+12.4% vs last month" tone="positive"/>
             <Metric icon={Users} label="Active members" value={stats.data ? String(stats.data.active) : "—"} note="With a current membership" tone="neutral"/>

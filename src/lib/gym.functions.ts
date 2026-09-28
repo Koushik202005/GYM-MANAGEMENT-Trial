@@ -217,3 +217,111 @@ export const deleteMemberProfile = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { deleted: true };
   });
+
+/* ---------------- Admin: gym branding settings ---------------- */
+
+const gymSettingsSchema = z.object({
+  gym_name: z.string().trim().min(2, "Enter a gym name").max(100),
+  app_title: z.string().trim().min(2, "Enter a web app title").max(100),
+  logoDataUrl: z.string().max(2_800_000).optional(),
+  clearLogo: z.boolean().optional().default(false),
+});
+
+async function requireAdmin(context: { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string }) {
+  const { data: roleRow, error } = await context.supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", context.userId)
+    .eq("role", "admin")
+    .maybeSingle();
+  if (error || !roleRow) throw new Error("Only administrators can manage gym settings.");
+}
+
+export const getGymSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("gym_settings")
+      .select("gym_name, logo_url, app_title")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal" };
+  });
+
+// Public web-app branding only; operational settings remain behind authenticated admin flows.
+export const getGymBranding = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const db = await admin();
+    const { data, error } = await db
+      .from("gym_settings")
+      .select("gym_name, logo_url, app_title")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal" };
+  });
+
+export const saveGymSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: z.input<typeof gymSettingsSchema>) => gymSettingsSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdmin(context);
+    let logoUrl: string | null | undefined;
+
+    if (data.logoDataUrl) {
+      const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(data.logoDataUrl);
+      if (!match) throw new Error("Choose a PNG, JPG, or WebP image.");
+      const mimeType = match[1];
+      const encodedImage = match[2];
+      if (!mimeType || !encodedImage) throw new Error("The selected logo is invalid.");
+      const bytes = Buffer.from(encodedImage, "base64");
+      if (bytes.byteLength === 0 || bytes.byteLength > 2 * 1024 * 1024) {
+        throw new Error("The logo must be smaller than 2 MB.");
+      }
+      const extension = mimeType === "image/jpeg" ? "jpg" : mimeType.slice("image/".length);
+      const objectPath = `logo.${extension}`;
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const storage = supabaseAdmin.storage.from("gym-branding");
+      const { error: uploadError } = await storage.upload(objectPath, bytes, {
+        contentType: mimeType,
+        cacheControl: "0",
+        upsert: true,
+      });
+      if (uploadError) throw new Error(uploadError.message);
+      logoUrl = `${storage.getPublicUrl(objectPath).data.publicUrl}?v=${Date.now()}`;
+    } else if (data.clearLogo) {
+      logoUrl = null;
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: settings, error: readError } = await supabaseAdmin
+      .from("gym_settings")
+      .select("id")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (readError) throw new Error(readError.message);
+    if (!settings) throw new Error("Gym settings have not been initialized.");
+
+    const updates = {
+      gym_name: data.gym_name,
+      app_title: data.app_title,
+      ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
+    };
+    const { error } = await supabaseAdmin.from("gym_settings").update(updates).eq("id", settings.id);
+    if (error) throw new Error(error.message);
+    if (data.logoDataUrl) {
+      const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
+      const extension = logoUrl?.split("/logo.")[1]?.split("?")[0];
+      await db.storage.from("gym-branding").remove(
+        ["png", "jpg", "webp"].filter((ext) => ext !== extension).map((ext) => `logo.${ext}`),
+      );
+    } else if (data.clearLogo) {
+      const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
+      await db.storage.from("gym-branding").remove(["logo.png", "logo.jpg", "logo.webp"]);
+    }
+    return { ...updates, ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}) };
+  });
