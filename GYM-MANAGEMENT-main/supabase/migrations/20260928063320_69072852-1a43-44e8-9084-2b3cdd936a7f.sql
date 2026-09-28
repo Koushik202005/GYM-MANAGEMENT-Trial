@@ -1,1 +1,0 @@
-ALTER PUBLICATION supabase_realtime ADD TABLE public.payments, public.members, public.memberships, public.attendance;
