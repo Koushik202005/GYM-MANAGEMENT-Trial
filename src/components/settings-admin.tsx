@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Dumbbell, ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
@@ -7,6 +7,14 @@ import { getGymSettings, saveGymSettings } from "@/lib/gym.functions";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const ACCEPTED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const THEMES = [
+  { id: "forge-green", name: "Forge Green", color: "#8bdd20", foreground: "#17200b" },
+  { id: "ocean-blue", name: "Ocean Blue", color: "#2875d6", foreground: "#ffffff" },
+  { id: "ember-orange", name: "Ember Orange", color: "#d88720", foreground: "#251603" },
+  { id: "violet", name: "Violet", color: "#8052cf", foreground: "#ffffff" },
+  { id: "rose", name: "Rose", color: "#d33b65", foreground: "#ffffff" },
+] as const;
+type ThemeId = (typeof THEMES)[number]["id"];
 
 function readAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -24,9 +32,15 @@ export function SettingsAdmin() {
   const settings = useQuery({ queryKey: ["gym-settings"], queryFn: () => loadSettings() });
   const [logoDataUrl, setLogoDataUrl] = useState("");
   const [clearLogo, setClearLogo] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState<ThemeId>("forge-green");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const savedTheme = THEMES.find((theme) => theme.id === settings.data?.color_theme);
+    if (savedTheme) setSelectedTheme(savedTheme.id);
+  }, [settings.data?.color_theme]);
 
   async function pickLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
@@ -61,6 +75,7 @@ export function SettingsAdmin() {
         data: {
           gym_name: String(form.get("gymName")),
           app_title: String(form.get("appTitle")),
+          color_theme: selectedTheme,
           ...(logoDataUrl ? { logoDataUrl } : {}),
           clearLogo,
         },
@@ -90,10 +105,10 @@ export function SettingsAdmin() {
   return <section className="panel max-w-4xl p-5 md:p-7">
     <div className="mb-6 border-b border-border pb-5">
       <h2 className="section-title">Gym branding</h2>
-      <p className="section-subtitle">Update the name, logo, and browser tab title used throughout the web app.</p>
+      <p className="section-subtitle">Update the name, logo, browser tab title, and colors used throughout the web app.</p>
     </div>
 
-    <form key={`${settings.data.gym_name}:${settings.data.app_title}:${settings.data.logo_url ?? ""}`} onSubmit={submit} className="space-y-6">
+    <form key={`${settings.data.gym_name}:${settings.data.app_title}:${settings.data.logo_url ?? ""}:${settings.data.color_theme}`} onSubmit={submit} className="space-y-6">
       <label className="block">
         <span className="form-label">Gym name</span>
         <input name="gymName" required minLength={2} maxLength={100} defaultValue={settings.data.gym_name} className="form-input" />
@@ -116,6 +131,18 @@ export function SettingsAdmin() {
           <p className="w-full text-xs text-muted-foreground">PNG, JPG, or WebP. Maximum file size: 2 MB.</p>
         </div>
       </div>
+
+      <fieldset>
+        <legend className="form-label">Color theme</legend>
+        <p className="mb-3 text-xs text-muted-foreground">Choose the accent colors used across the admin and member app. Changes apply after you save.</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label="Color theme">
+          {THEMES.map((theme) => <label key={theme.id} className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors ${selectedTheme === theme.id ? "border-primary bg-secondary" : "border-border hover:bg-muted/50"}`}>
+            <input type="radio" name="colorTheme" value={theme.id} checked={selectedTheme === theme.id} onChange={() => setSelectedTheme(theme.id)} className="peer sr-only" />
+            <span className="grid size-9 shrink-0 place-items-center rounded-full peer-focus-visible:ring-2 peer-focus-visible:ring-ring" style={{ backgroundColor: theme.color, color: theme.foreground }}><span className="text-sm font-bold">A</span></span>
+            <span><span className="block text-sm font-semibold">{theme.name}</span><span className="mt-1 flex gap-1" aria-hidden="true">{[theme.color, theme.foreground, "var(--secondary)"].map((color, index) => <span key={index} className="size-3 rounded-full border border-border/70" style={{ backgroundColor: color }} />)}</span></span>
+          </label>)}
+        </div>
+      </fieldset>
 
       <label className="block">
         <span className="form-label">Web app title</span>

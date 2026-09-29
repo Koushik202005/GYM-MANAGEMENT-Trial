@@ -474,6 +474,7 @@ export type Database = {
           address: string | null
           app_title: string
           booking_window_days: number
+          color_theme: string
           contact_email: string | null
           contact_phone: string | null
           currency: string
@@ -488,6 +489,7 @@ export type Database = {
           address?: string | null
           app_title?: string
           booking_window_days?: number
+          color_theme?: string
           contact_email?: string | null
           contact_phone?: string | null
           currency?: string
@@ -502,6 +504,7 @@ export type Database = {
           address?: string | null
           app_title?: string
           booking_window_days?: number
+          color_theme?: string
           contact_email?: string | null
           contact_phone?: string | null
           currency?: string

@@ -223,6 +223,7 @@ export const deleteMemberProfile = createServerFn({ method: "POST" })
 const gymSettingsSchema = z.object({
   gym_name: z.string().trim().min(2, "Enter a gym name").max(100),
   app_title: z.string().trim().min(2, "Enter a web app title").max(100),
+  color_theme: z.enum(["forge-green", "ocean-blue", "ember-orange", "violet", "rose"]),
   logoDataUrl: z.string().max(2_800_000).optional(),
   clearLogo: z.boolean().optional().default(false),
 });
@@ -242,12 +243,12 @@ export const getGymSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("gym_settings")
-      .select("gym_name, logo_url, app_title")
+      .select("gym_name, logo_url, app_title, color_theme")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal" };
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green" };
   });
 
 // Public web-app branding only; operational settings remain behind authenticated admin flows.
@@ -256,12 +257,12 @@ export const getGymBranding = createServerFn({ method: "GET" })
     const db = await admin();
     const { data, error } = await db
       .from("gym_settings")
-      .select("gym_name, logo_url, app_title")
+      .select("gym_name, logo_url, app_title, color_theme")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal" };
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green" };
   });
 
 export const saveGymSettings = createServerFn({ method: "POST" })
@@ -309,6 +310,7 @@ export const saveGymSettings = createServerFn({ method: "POST" })
     const updates = {
       gym_name: data.gym_name,
       app_title: data.app_title,
+      color_theme: data.color_theme,
       ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
     };
     const { error } = await supabaseAdmin.from("gym_settings").update(updates).eq("id", settings.id);

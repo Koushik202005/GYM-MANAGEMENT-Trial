@@ -137,6 +137,7 @@ function BrandingSync() {
   useEffect(() => {
     if (!branding) return;
     document.title = branding.app_title;
+    document.documentElement.dataset.theme = branding.color_theme;
     let icon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
     if (!icon) {
       icon = document.createElement("link");
