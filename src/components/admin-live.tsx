@@ -5,7 +5,8 @@ import { Bell, CreditCard, Loader2, Trash2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteMemberProfile } from "@/lib/gym.functions";
-import { inr } from "@/lib/sign-out";
+import { formatMoney } from "@/lib/currency";
+import { useGymCurrency } from "@/lib/currency-context";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -49,18 +50,19 @@ export function useLiveStats() {
 type Note = { id: string; kind: "payment" | "member"; text: string; at: string };
 
 export function NotificationsBell() {
+  const currency = useGymCurrency();
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState(() => (typeof window === "undefined" ? "" : localStorage.getItem("admin-notes-seen") ?? ""));
   const ref = useRef<HTMLDivElement>(null);
   const q = useQuery({
-    queryKey: ["admin-live", "notes"],
+    queryKey: ["admin-live", "notes", currency],
     queryFn: async (): Promise<Note[]> => {
       const [pays, mems] = await Promise.all([
-        supabase.from("payments").select("id, amount_inr, status, updated_at, members(profiles(display_name))").order("updated_at", { ascending: false }).limit(10),
+        supabase.from("payments").select("id, amount, currency, status, updated_at, members(profiles(display_name))").order("updated_at", { ascending: false }).limit(10),
         supabase.from("members").select("id, created_at, profiles(display_name)").order("created_at", { ascending: false }).limit(10),
       ]);
       const notes: Note[] = [
-        ...(pays.data ?? []).map((p) => ({ id: "p" + p.id, kind: "payment" as const, at: p.updated_at, text: `${p.members?.profiles?.display_name || "Member"} · payment ${inr(p.amount_inr)} ${p.status}` })),
+        ...(pays.data ?? []).map((p) => ({ id: "p" + p.id, kind: "payment" as const, at: p.updated_at, text: `${p.members?.profiles?.display_name || "Member"} · payment ${formatMoney(p.amount, p.currency || currency)} ${p.status}` })),
         ...(mems.data ?? []).map((m) => ({ id: "m" + m.id, kind: "member" as const, at: m.created_at, text: `${m.profiles?.display_name || "New member"} registered` })),
       ];
       return notes.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 15);

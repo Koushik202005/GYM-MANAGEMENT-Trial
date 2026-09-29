@@ -15,6 +15,7 @@ import { useServerFn } from "@tanstack/react-start";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { getGymBranding } from "@/lib/gym.functions";
+import { CurrencyContext } from "@/lib/currency-context";
 
 function NotFoundComponent() {
   return (
@@ -122,14 +123,15 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrandingSync />
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <BrandingSync>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+      </BrandingSync>
     </QueryClientProvider>
   );
 }
 
-function BrandingSync() {
+function BrandingSync({ children }: { children: ReactNode }) {
   const loadBranding = useServerFn(getGymBranding);
   const { data: branding } = useQuery({ queryKey: ["gym-branding"], queryFn: () => loadBranding() });
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -147,5 +149,5 @@ function BrandingSync() {
     icon.href = branding.logo_url ?? "/favicon.ico";
   }, [branding?.app_title, branding?.logo_url, pathname]);
 
-  return null;
+  return <CurrencyContext.Provider value={branding?.currency ?? "INR"}>{children}</CurrencyContext.Provider>;
 }

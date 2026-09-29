@@ -478,10 +478,12 @@ export type Database = {
           contact_email: string | null
           contact_phone: string | null
           currency: string
+          country_code: string
           default_cancellation_minutes: number
           gym_name: string
           id: string
           logo_url: string | null
+          payment_gateway: string
           timezone: string
           updated_at: string
         }
@@ -493,10 +495,12 @@ export type Database = {
           contact_email?: string | null
           contact_phone?: string | null
           currency?: string
+          country_code?: string
           default_cancellation_minutes?: number
           gym_name?: string
           id?: string
           logo_url?: string | null
+          payment_gateway?: string
           timezone?: string
           updated_at?: string
         }
@@ -508,10 +512,12 @@ export type Database = {
           contact_email?: string | null
           contact_phone?: string | null
           currency?: string
+          country_code?: string
           default_cancellation_minutes?: number
           gym_name?: string
           id?: string
           logo_url?: string | null
+          payment_gateway?: string
           timezone?: string
           updated_at?: string
         }
@@ -568,9 +574,9 @@ export type Database = {
           duration_days: number
           freeze_days: number
           id: string
-          joining_fee_inr: number
+          joining_fee_amount: number
           name: string
-          price_inr: number
+          price_amount: number
           updated_at: string
         }
         Insert: {
@@ -582,9 +588,9 @@ export type Database = {
           duration_days: number
           freeze_days?: number
           id?: string
-          joining_fee_inr?: number
+          joining_fee_amount?: number
           name: string
-          price_inr: number
+          price_amount: number
           updated_at?: string
         }
         Update: {
@@ -596,9 +602,9 @@ export type Database = {
           duration_days?: number
           freeze_days?: number
           id?: string
-          joining_fee_inr?: number
+          joining_fee_amount?: number
           name?: string
-          price_inr?: number
+          price_amount?: number
           updated_at?: string
         }
         Relationships: []
@@ -733,12 +739,13 @@ export type Database = {
       }
       payments: {
         Row: {
-          amount_inr: number
-          base_amount_inr: number
+          amount: number
+          base_amount: number
           coupon_id: string | null
           created_at: string
           created_by: string | null
-          discount_inr: number
+          currency: string
+          discount_amount: number
           id: string
           member_id: string
           membership_id: string | null
@@ -749,18 +756,19 @@ export type Database = {
           provider_order_id: string | null
           provider_payment_id: string | null
           receipt_number: string | null
-          refund_amount_inr: number
+          refund_amount: number
           status: Database["public"]["Enums"]["payment_status"]
           updated_at: string
           verified_at: string | null
         }
         Insert: {
-          amount_inr: number
-          base_amount_inr?: number
+          amount: number
+          base_amount?: number
           coupon_id?: string | null
           created_at?: string
           created_by?: string | null
-          discount_inr?: number
+          currency?: string
+          discount_amount?: number
           id?: string
           member_id: string
           membership_id?: string | null
@@ -771,18 +779,19 @@ export type Database = {
           provider_order_id?: string | null
           provider_payment_id?: string | null
           receipt_number?: string | null
-          refund_amount_inr?: number
+          refund_amount?: number
           status?: Database["public"]["Enums"]["payment_status"]
           updated_at?: string
           verified_at?: string | null
         }
         Update: {
-          amount_inr?: number
-          base_amount_inr?: number
+          amount?: number
+          base_amount?: number
           coupon_id?: string | null
           created_at?: string
           created_by?: string | null
-          discount_inr?: number
+          currency?: string
+          discount_amount?: number
           id?: string
           member_id?: string
           membership_id?: string | null
@@ -793,7 +802,7 @@ export type Database = {
           provider_order_id?: string | null
           provider_payment_id?: string | null
           receipt_number?: string | null
-          refund_amount_inr?: number
+          refund_amount?: number
           status?: Database["public"]["Enums"]["payment_status"]
           updated_at?: string
           verified_at?: string | null
@@ -1155,6 +1164,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      complete_membership_payment: {
+        Args: {
+          p_amount_minor: number
+          p_currency: string
+          p_payment_id: string
+          p_provider_payment_id: string
+        }
+        Returns: { completed: boolean; new_membership_id: string }[]
+      }
       [_ in never]: never
     }
     Enums: {
@@ -1170,6 +1188,7 @@ export type Database = {
         | "cancelled"
       payment_method:
         | "razorpay"
+        | "stripe"
         | "cash"
         | "upi"
         | "bank_transfer"
@@ -1321,6 +1340,7 @@ export const Constants = {
       ],
       payment_method: [
         "razorpay",
+        "stripe",
         "cash",
         "upi",
         "bank_transfer",

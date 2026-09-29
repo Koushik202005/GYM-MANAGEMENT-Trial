@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { fromMinorUnits, toMinorUnits } from "@/lib/currency";
 
 const phoneSchema = z.string().trim().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit Indian mobile number");
 
@@ -85,18 +86,23 @@ export const completeProfile = createServerFn({ method: "POST" })
 
 /* ---------------- Pricing & coupons ---------------- */
 
-type Quote = { planId: string; planName: string; base: number; joiningFee: number; discount: number; total: number; couponId: string | null; couponCode: string | null };
+type Quote = { planId: string; planName: string; base: number; joiningFee: number; discount: number; total: number; currency: string; couponId: string | null; couponCode: string | null };
 
 async function buildQuote(db: Awaited<ReturnType<typeof admin>>, userId: string, planId: string, code?: string): Promise<Quote> {
   const { data: plan } = await db.from("membership_plans").select("*").eq("id", planId).eq("active", true).single();
   if (!plan) throw new Error("This plan is not available.");
+  const { data: gym } = await db.from("gym_settings").select("currency").limit(1).maybeSingle();
+  const currency = gym?.currency ?? "INR";
+  if (!SUPPORTED_BILLING_CURRENCIES.includes(currency as typeof SUPPORTED_BILLING_CURRENCIES[number])) {
+    throw new Error("The gym billing currency is not supported for checkout.");
+  }
   const { data: member } = await db.from("members").select("id").eq("profile_id", userId).single();
-  let joiningFee = Number(plan.joining_fee_inr);
+  let joiningFee = fromMinorUnits(toMinorUnits(Number(plan.joining_fee_amount), currency), currency);
   if (member) {
     const { count } = await db.from("memberships").select("id", { count: "exact", head: true }).eq("member_id", member.id);
     if ((count ?? 0) > 0) joiningFee = 0; // renewals skip the joining fee
   }
-  const base = Number(plan.price_inr);
+  const base = fromMinorUnits(toMinorUnits(Number(plan.price_amount), currency), currency);
   let discount = 0; let couponId: string | null = null; let couponCode: string | null = null;
   if (code?.trim()) {
     const { data: c } = await db.from("coupons").select("*").ilike("code", code.trim()).eq("active", true).maybeSingle();
@@ -105,12 +111,17 @@ async function buildQuote(db: Awaited<ReturnType<typeof admin>>, userId: string,
     if (c.plan_id && c.plan_id !== planId) throw new Error("This coupon doesn't apply to this plan.");
     if ((c.valid_from && today < c.valid_from) || (c.valid_until && today > c.valid_until)) throw new Error("This coupon has expired.");
     if (c.max_redemptions != null && c.redemptions_count >= c.max_redemptions) throw new Error("This coupon has been fully used.");
-    discount = c.discount_type === "percent" ? Math.round((base * Number(c.discount_value)) / 100) : Number(c.discount_value);
-    discount = Math.min(discount, base);
+    const discountMinor = c.discount_type === "percent"
+      ? Math.round((toMinorUnits(base, currency) * Number(c.discount_value)) / 100)
+      : toMinorUnits(Number(c.discount_value), currency);
+    discount = fromMinorUnits(Math.min(discountMinor, toMinorUnits(base, currency)), currency);
     couponId = c.id; couponCode = c.code;
   }
-  return { planId, planName: plan.name, base, joiningFee, discount, total: base + joiningFee - discount, couponId, couponCode };
+  const total = fromMinorUnits(toMinorUnits(base + joiningFee - discount, currency), currency);
+  return { planId, planName: plan.name, base, joiningFee, discount, total, currency, couponId, couponCode };
 }
+
+const SUPPORTED_BILLING_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "CAD", "AUD", "SGD", "NZD", "JPY"] as const;
 
 export const quotePlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -126,6 +137,8 @@ export const createRazorpayOrder = createServerFn({ method: "POST" })
     const keyId = process.env["RAZORPAY_KEY_ID"]; const secret = process.env["RAZORPAY_KEY_SECRET"];
     if (!keyId || !secret) throw new Error("Online payments are not switched on yet. Please pay at the front desk or try again later.");
     const db = await admin();
+    const { data: gym } = await db.from("gym_settings").select("country_code, currency, payment_gateway").limit(1).maybeSingle();
+    if (gym?.payment_gateway !== "razorpay" || gym.country_code !== "IN" || gym.currency !== "INR") throw new Error("Razorpay checkout requires India and INR and must be selected in Gym Settings.");
     const { data: profile } = await db.from("profiles").select("onboarding_completed, display_name, email, phone").eq("id", context.userId).single();
     if (!profile?.onboarding_completed) throw new Error("Complete your profile first.");
     const { data: member } = await db.from("members").select("id").eq("profile_id", context.userId).single();
@@ -135,16 +148,16 @@ export const createRazorpayOrder = createServerFn({ method: "POST" })
     const res = await fetch("https://api.razorpay.com/v1/orders", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Basic ${btoa(`${keyId}:${secret}`)}` },
-      body: JSON.stringify({ amount: Math.round(q.total * 100), currency: "INR", receipt, notes: { plan: q.planName, member: member.id } }),
+      body: JSON.stringify({ amount: toMinorUnits(q.total, q.currency), currency: q.currency, receipt, notes: { plan: q.planName, member: member.id } }),
     });
     const order = (await res.json()) as { id?: string; error?: { description?: string } };
     if (!res.ok || !order.id) throw new Error(order.error?.description || "Could not start payment.");
     const { error } = await db.from("payments").insert({
-      member_id: member.id, plan_id: q.planId, coupon_id: q.couponId, amount_inr: q.total, base_amount_inr: q.base + q.joiningFee,
-      discount_inr: q.discount, method: "razorpay", status: "created", provider_order_id: order.id, receipt_number: receipt, created_by: context.userId,
+      member_id: member.id, plan_id: q.planId, coupon_id: q.couponId, amount: q.total, base_amount: q.base + q.joiningFee,
+      discount_amount: q.discount, currency: q.currency, method: "razorpay", status: "created", provider_order_id: order.id, receipt_number: receipt, created_by: context.userId,
     });
     if (error) throw new Error(error.message);
-    return { keyId, orderId: order.id, amount: Math.round(q.total * 100), name: profile.display_name, email: profile.email, phone: profile.phone ?? "" };
+    return { keyId, orderId: order.id, amount: toMinorUnits(q.total, q.currency), currency: q.currency, name: profile.display_name, email: profile.email, phone: profile.phone ?? "" };
   });
 
 export const verifyRazorpayPayment = createServerFn({ method: "POST" })
@@ -160,36 +173,100 @@ export const verifyRazorpayPayment = createServerFn({ method: "POST" })
     const a = Buffer.from(expected); const b = Buffer.from(data.signature);
     if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error("Payment could not be verified.");
     const db = await admin();
+    const { data: pay } = await db.from("payments").select("*").eq("provider_order_id", data.orderId).eq("method", "razorpay").single();
     const { data: member } = await db.from("members").select("id").eq("profile_id", context.userId).single();
-    const { data: pay } = await db.from("payments").select("*").eq("provider_order_id", data.orderId).single();
     if (!pay || !member || pay.member_id !== member.id) throw new Error("Payment not found.");
-    if (pay.status === "verified") return { paymentId: pay.id };
-    const activated = await activateMembership(db, pay.member_id, pay.plan_id!);
-    await db.from("payments").update({
-      status: "verified", provider_payment_id: data.paymentId, verified_at: new Date().toISOString(), paid_at: new Date().toISOString(), membership_id: activated,
-    }).eq("id", pay.id).eq("status", "created");
-    if (pay.coupon_id) {
+    const keyId = process.env["RAZORPAY_KEY_ID"];
+    if (!keyId) throw new Error("Payments not configured.");
+    const paymentResponse = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(data.paymentId)}`, {
+      headers: { authorization: `Basic ${btoa(`${keyId}:${secret}`)}` },
+    });
+    const gatewayPayment = await paymentResponse.json() as { id?: string; order_id?: string; amount?: number; currency?: string; status?: string };
+    if (!paymentResponse.ok || gatewayPayment.id !== data.paymentId || gatewayPayment.order_id !== data.orderId || gatewayPayment.status !== "captured") {
+      throw new Error("Razorpay has not confirmed a captured payment for this order.");
+    }
+    const { completeMembershipPayment } = await import("@/lib/payment.server");
+    const completion = await completeMembershipPayment(pay.id, data.paymentId, gatewayPayment.currency ?? "", gatewayPayment.amount ?? 0);
+    if (completion.completed && pay.coupon_id) {
       const { data: c } = await db.from("coupons").select("redemptions_count").eq("id", pay.coupon_id).single();
       if (c) await db.from("coupons").update({ redemptions_count: c.redemptions_count + 1 }).eq("id", pay.coupon_id);
     }
-    await db.from("members").update({ status: "active" }).eq("id", pay.member_id);
-    await db.from("notifications").insert({ user_id: context.userId, title: "Payment received", message: `₹${pay.amount_inr} received. Your receipt ${pay.receipt_number} is ready to download.`, category: "payment" });
     return { paymentId: pay.id };
   });
 
-async function activateMembership(db: Awaited<ReturnType<typeof admin>>, memberId: string, planId: string) {
-  const { data: plan } = await db.from("membership_plans").select("duration_days").eq("id", planId).single();
-  const { data: current } = await db.from("memberships").select("ends_on").eq("member_id", memberId).in("status", ["active", "pending"]).order("ends_on", { ascending: false }).limit(1).maybeSingle();
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const start = current && new Date(current.ends_on) >= today ? new Date(new Date(current.ends_on).getTime() + 86400000) : today;
-  const end = new Date(start.getTime() + ((plan?.duration_days ?? 30) - 1) * 86400000);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const { data, error } = await db.from("memberships").insert({
-    member_id: memberId, plan_id: planId, status: start > today ? "pending" : "active", starts_on: iso(start), ends_on: iso(end),
-  }).select("id").single();
-  if (error) throw new Error(error.message);
-  return data.id;
-}
+export const createStripeCheckout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { planId: string; coupon?: string }) => z.object({ planId: z.string().uuid(), coupon: z.string().max(40).optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const secret = process.env["STRIPE_SECRET_KEY"];
+    const appUrl = process.env["APP_URL"] ?? process.env["URL"];
+    if (!secret) throw new Error("Stripe is selected, but STRIPE_SECRET_KEY is not configured on the server.");
+    if (!appUrl) throw new Error("Set APP_URL in the server environment before using Stripe checkout.");
+    const db = await admin();
+    const { data: gym } = await db.from("gym_settings").select("payment_gateway, currency").limit(1).maybeSingle();
+    if (gym?.payment_gateway !== "stripe") throw new Error("Stripe is not the active payment gateway. Update Gym Settings first.");
+    if (!SUPPORTED_BILLING_CURRENCIES.includes(gym.currency as typeof SUPPORTED_BILLING_CURRENCIES[number])) throw new Error("The selected billing currency is not supported by this checkout.");
+    const { data: profile } = await db.from("profiles").select("onboarding_completed, display_name, email").eq("id", context.userId).single();
+    if (!profile?.onboarding_completed) throw new Error("Complete your profile first.");
+    const { data: member } = await db.from("members").select("id").eq("profile_id", context.userId).single();
+    if (!member) throw new Error("Member record not found.");
+    const quote = await buildQuote(db, context.userId, data.planId, data.coupon);
+    const receipt = `FRG${Date.now()}`;
+    const { data: payment, error: paymentError } = await db.from("payments").insert({
+      member_id: member.id, plan_id: quote.planId, coupon_id: quote.couponId,
+      amount: quote.total, base_amount: quote.base + quote.joiningFee, discount_amount: quote.discount,
+      currency: quote.currency, method: "stripe", status: "created", receipt_number: receipt, created_by: context.userId,
+    }).select("id").single();
+    if (paymentError || !payment) throw new Error(paymentError?.message ?? "Could not create payment record.");
+
+    const origin = appUrl.replace(/\/$/, "");
+    const parameters = new URLSearchParams({
+      mode: "payment",
+      success_url: `${origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/dashboard?checkout_cancelled=1`,
+      client_reference_id: payment.id,
+      "line_items[0][price_data][currency]": quote.currency.toLowerCase(),
+      "line_items[0][price_data][unit_amount]": String(toMinorUnits(quote.total, quote.currency)),
+      "line_items[0][price_data][product_data][name]": quote.planName,
+      "line_items[0][quantity]": "1",
+      "metadata[payment_id]": payment.id,
+      "metadata[member_id]": member.id,
+      "metadata[plan_id]": quote.planId,
+    });
+    if (profile.email) parameters.set("customer_email", profile.email);
+    const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: parameters.toString(),
+    });
+    const session = await response.json() as { id?: string; url?: string; error?: { message?: string } };
+    if (!response.ok || !session.id || !session.url) {
+      await db.from("payments").update({ status: "failed" }).eq("id", payment.id).eq("status", "created");
+      throw new Error(session.error?.message ?? "Stripe could not create a checkout session.");
+    }
+    const { error: updateError } = await db.from("payments").update({ provider_order_id: session.id }).eq("id", payment.id);
+    if (updateError) throw new Error("Stripe created checkout but the gym could not save its payment reference.");
+    return { checkoutUrl: session.url };
+  });
+
+export const verifyStripeCheckout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { sessionId: string }) => z.object({ sessionId: z.string().regex(/^cs_(test|live)_[A-Za-z0-9]+$/) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const secret = process.env["STRIPE_SECRET_KEY"];
+    if (!secret) throw new Error("Stripe payments are not configured.");
+    const db = await admin();
+    const { data: member } = await db.from("members").select("id").eq("profile_id", context.userId).single();
+    if (!member) throw new Error("Member record not found.");
+    const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(data.sessionId)}`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    const session = await response.json() as { id?: string; payment_status?: string; currency?: string; amount_total?: number | null; payment_intent?: string | { id?: string } | null; metadata?: Record<string, string | undefined> | null; error?: { message?: string } };
+    if (!response.ok) throw new Error(session.error?.message ?? "Could not verify this Stripe checkout.");
+    if (session.metadata?.member_id !== member.id) throw new Error("This checkout does not belong to your member account.");
+    const { completeStripeSession } = await import("@/lib/payment.server");
+    return completeStripeSession(session);
+  });
 
 /* ---------------- Admin: delete inactive member profile ---------------- */
 
@@ -224,8 +301,15 @@ const gymSettingsSchema = z.object({
   gym_name: z.string().trim().min(2, "Enter a gym name").max(100),
   app_title: z.string().trim().min(2, "Enter a web app title").max(100),
   color_theme: z.enum(["forge-green", "ocean-blue", "ember-orange", "violet", "rose"]),
+  currency: z.enum(["INR", "USD", "EUR", "GBP", "AED", "CAD", "AUD", "SGD", "NZD", "JPY"]),
+  country_code: z.enum(["IN", "US", "GB", "CA", "AU", "SG", "AE", "NZ", "JP", "DE", "FR", "IE"]),
+  payment_gateway: z.enum(["razorpay", "stripe"]),
   logoDataUrl: z.string().max(2_800_000).optional(),
   clearLogo: z.boolean().optional().default(false),
+}).superRefine((settings, context) => {
+  if (settings.payment_gateway === "razorpay" && (settings.country_code !== "IN" || settings.currency !== "INR")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Razorpay requires gym country India and billing currency INR." });
+  }
 });
 
 async function requireAdmin(context: { supabase: import("@supabase/supabase-js").SupabaseClient; userId: string }) {
@@ -243,12 +327,12 @@ export const getGymSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("gym_settings")
-      .select("gym_name, logo_url, app_title, color_theme, timezone")
+      .select("gym_name, logo_url, app_title, color_theme, timezone, currency, country_code, payment_gateway")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green", timezone: "Asia/Kolkata" };
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green", timezone: "Asia/Kolkata", currency: "INR", country_code: "IN", payment_gateway: "razorpay" };
   });
 
 // Public web-app branding only; operational settings remain behind authenticated admin flows.
@@ -257,12 +341,12 @@ export const getGymBranding = createServerFn({ method: "GET" })
     const db = await admin();
     const { data, error } = await db
       .from("gym_settings")
-      .select("gym_name, logo_url, app_title, color_theme, timezone")
+      .select("gym_name, logo_url, app_title, color_theme, timezone, currency, country_code, payment_gateway")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green", timezone: "Asia/Kolkata" };
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green", timezone: "Asia/Kolkata", currency: "INR", country_code: "IN", payment_gateway: "razorpay" };
   });
 
 export const saveGymSettings = createServerFn({ method: "POST" })
@@ -311,6 +395,9 @@ export const saveGymSettings = createServerFn({ method: "POST" })
       gym_name: data.gym_name,
       app_title: data.app_title,
       color_theme: data.color_theme,
+      currency: data.currency,
+      country_code: data.country_code,
+      payment_gateway: data.payment_gateway,
       ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
     };
     const { error } = await supabaseAdmin.from("gym_settings").update(updates).eq("id", settings.id);

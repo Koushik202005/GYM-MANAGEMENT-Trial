@@ -21,10 +21,10 @@ function membershipLabel(status: string | undefined, startsOn: string | undefine
   return expiresSoon ? "Expiring" : "Active";
 }
 
-export function useAdminDashboardData(timeZone: string, targetDate?: string) {
+export function useAdminDashboardData(timeZone: string, targetDate?: string, currency = "INR") {
   const today = targetDate ?? gymDateKey(new Date(), timeZone);
   return useQuery({
-    queryKey: ["admin-live", "dashboard", today, timeZone],
+    queryKey: ["admin-live", "dashboard", today, timeZone, currency],
     refetchInterval: 30_000,
     queryFn: async () => {
       const now = new Date();
@@ -34,7 +34,7 @@ export function useAdminDashboardData(timeZone: string, targetDate?: string) {
       const tomorrowStart = gymDateStartUtc(shiftDateKey(today, 1), timeZone);
 
       const [paymentsResult, activeResult, attendanceCountResult, expiringResult, schedulesResult, activityResult] = await Promise.all([
-        supabase.from("payments").select("amount_inr, refund_amount_inr, paid_at").in("status", ["verified", "partially_refunded"]).not("paid_at", "is", null).gte("paid_at", gymDateStartUtc(previousMonthStart, timeZone).toISOString()).lte("paid_at", now.toISOString()),
+        supabase.from("payments").select("amount, refund_amount, paid_at").eq("currency", currency).in("status", ["verified", "partially_refunded"]).not("paid_at", "is", null).gte("paid_at", gymDateStartUtc(previousMonthStart, timeZone).toISOString()).lte("paid_at", now.toISOString()),
         supabase.from("memberships").select("member_id").eq("status", "active").lte("starts_on", today).gte("ends_on", today),
         supabase.from("attendance").select("id", { count: "exact", head: true }).gte("checked_in_at", dayStart.toISOString()).lt("checked_in_at", tomorrowStart.toISOString()),
         supabase.from("memberships").select("member_id").eq("status", "active").lte("starts_on", today).gte("ends_on", today).lte("ends_on", shiftDateKey(today, 7)),
@@ -51,7 +51,7 @@ export function useAdminDashboardData(timeZone: string, targetDate?: string) {
       for (const payment of paymentsResult.data ?? []) {
         if (!payment.paid_at) continue;
         const date = gymDateKey(new Date(payment.paid_at), timeZone);
-        const netAmount = Math.max(0, Number(payment.amount_inr) - Number(payment.refund_amount_inr));
+        const netAmount = Math.max(0, Number(payment.amount) - Number(payment.refund_amount));
         if (date >= monthStart) monthlyRevenue += netAmount;
         else if (date >= previousMonthStart) previousMonthRevenue += netAmount;
         if (points.has(date)) points.set(date, (points.get(date) ?? 0) + netAmount);

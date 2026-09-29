@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Dumbbell, ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getGymSettings, saveGymSettings } from "@/lib/gym.functions";
+import { CURRENCIES, GYM_COUNTRIES, type CountryCode, type CurrencyCode } from "@/lib/currency";
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 const ACCEPTED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -33,6 +34,9 @@ export function SettingsAdmin() {
   const [logoDataUrl, setLogoDataUrl] = useState("");
   const [clearLogo, setClearLogo] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState<ThemeId>("forge-green");
+  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyCode>("INR");
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>("IN");
+  const [selectedGateway, setSelectedGateway] = useState<"razorpay" | "stripe">("razorpay");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -41,6 +45,19 @@ export function SettingsAdmin() {
     const savedTheme = THEMES.find((theme) => theme.id === settings.data?.color_theme);
     if (savedTheme) setSelectedTheme(savedTheme.id);
   }, [settings.data?.color_theme]);
+
+  useEffect(() => {
+    const savedCurrency = CURRENCIES.find((currency) => currency.code === settings.data?.currency);
+    if (savedCurrency) setSelectedCurrency(savedCurrency.code);
+  }, [settings.data?.currency]);
+
+  useEffect(() => {
+    const savedCountry = GYM_COUNTRIES.find((country) => country.code === settings.data?.country_code);
+    if (savedCountry) setSelectedCountry(savedCountry.code);
+    if (settings.data?.payment_gateway === "stripe" || settings.data?.payment_gateway === "razorpay") {
+      setSelectedGateway(settings.data.payment_gateway);
+    }
+  }, [settings.data?.country_code, settings.data?.payment_gateway]);
 
   async function pickLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
@@ -76,6 +93,9 @@ export function SettingsAdmin() {
           gym_name: String(form.get("gymName")),
           app_title: String(form.get("appTitle")),
           color_theme: selectedTheme,
+          currency: selectedCurrency,
+          country_code: selectedCountry,
+          payment_gateway: selectedGateway,
           ...(logoDataUrl ? { logoDataUrl } : {}),
           clearLogo,
         },
@@ -105,10 +125,10 @@ export function SettingsAdmin() {
   return <section className="panel max-w-4xl p-5 md:p-7">
     <div className="mb-6 border-b border-border pb-5">
       <h2 className="section-title">Gym branding</h2>
-      <p className="section-subtitle">Update the name, logo, browser tab title, and colors used throughout the web app.</p>
+      <p className="section-subtitle">Update the name, logo, browser tab title, colors, and currency presentation used throughout the web app.</p>
     </div>
 
-    <form key={`${settings.data.gym_name}:${settings.data.app_title}:${settings.data.logo_url ?? ""}:${settings.data.color_theme}`} onSubmit={submit} className="space-y-6">
+    <form key={`${settings.data.gym_name}:${settings.data.app_title}:${settings.data.logo_url ?? ""}:${settings.data.color_theme}:${settings.data.currency}:${settings.data.country_code}:${settings.data.payment_gateway}`} onSubmit={submit} className="space-y-6">
       <label className="block">
         <span className="form-label">Gym name</span>
         <input name="gymName" required minLength={2} maxLength={100} defaultValue={settings.data.gym_name} className="form-input" />
@@ -143,6 +163,41 @@ export function SettingsAdmin() {
           </label>)}
         </div>
       </fieldset>
+
+      <label className="block max-w-md">
+        <span className="form-label">Gym country</span>
+        <select name="country" value={selectedCountry} onChange={(event) => {
+          const country = GYM_COUNTRIES.find((item) => item.code === event.target.value);
+          if (!country) return;
+          setSelectedCountry(country.code);
+          setSelectedCurrency(country.currency);
+          if (country.code !== "IN" && selectedGateway === "razorpay") setSelectedGateway("stripe");
+          if (country.code === "IN" && selectedGateway === "razorpay") setSelectedCurrency("INR");
+        }} className="form-input">
+          {GYM_COUNTRIES.map((country) => <option key={country.code} value={country.code}>{country.name}</option>)}
+        </select>
+      </label>
+
+      <label className="block max-w-md">
+        <span className="form-label">Billing currency</span>
+        <select name="currency" value={selectedCurrency} onChange={(event) => setSelectedCurrency(event.target.value as CurrencyCode)} disabled={selectedGateway === "razorpay"} className="form-input">
+          {CURRENCIES.map((currency) => <option key={currency.code} value={currency.code}>{currency.name} ({currency.code})</option>)}
+        </select>
+        <span className="mt-1 block text-xs text-muted-foreground">New plan prices, coupons, and payments use this currency. Changing it reinterprets existing numeric plan and flat-coupon values without converting them; review prices before switching. Historical payments keep their recorded currency.</span>
+      </label>
+
+      <label className="block max-w-md">
+        <span className="form-label">Member payment gateway</span>
+        <select name="paymentGateway" value={selectedGateway} onChange={(event) => {
+          const gateway = event.target.value as "razorpay" | "stripe";
+          setSelectedGateway(gateway);
+          if (gateway === "razorpay") setSelectedCurrency("INR");
+        }} className="form-input">
+          <option value="razorpay" disabled={selectedCountry !== "IN"}>Razorpay{selectedCountry === "IN" ? " (recommended for India)" : " (India only; select Stripe outside India)"}</option>
+          <option value="stripe">Stripe</option>
+        </select>
+        {selectedGateway === "stripe" && <span className="mt-1 block text-xs text-muted-foreground">Configure STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and APP_URL in the server environment. Register {"/api/stripe-webhook"} in Stripe for checkout.session.completed and checkout.session.async_payment_succeeded events.</span>}
+      </label>
 
       <label className="block">
         <span className="form-label">Web app title</span>

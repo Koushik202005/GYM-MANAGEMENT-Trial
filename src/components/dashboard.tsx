@@ -17,7 +17,8 @@ import { getGymBranding } from "@/lib/gym.functions";
 import { useAdminDashboardData } from "@/components/admin-dashboard-data";
 import { ClassesAdmin } from "@/components/classes-admin";
 import { formatGymDate, gymDateKey } from "@/lib/gym-time";
-import { inr } from "@/lib/sign-out";
+import { formatMoney } from "@/lib/currency";
+import { useGymCurrency } from "@/lib/currency-context";
 
 const nav = [
   ["Overview", LayoutDashboard], ["Members", Users], ["Inactive", UserX], ["Memberships", WalletCards],
@@ -28,6 +29,7 @@ export function Dashboard({ name = "Admin" }: { name?: string }) {
   const [active, setActive] = useState("Overview");
   const initials = name.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const currency = useGymCurrency();
   useAdminRealtime();
   const [clock, setClock] = useState(() => new Date());
   useEffect(() => {
@@ -39,7 +41,7 @@ export function Dashboard({ name = "Admin" }: { name?: string }) {
   const gymName = gymSettings.data?.gym_name ?? "Forge Functional Fitness";
   const timeZone = gymSettings.data?.timezone ?? "Asia/Kolkata";
   const todayKey = gymDateKey(clock, timeZone);
-  const live = useAdminDashboardData(timeZone);
+  const live = useAdminDashboardData(timeZone, undefined, currency);
   const data = live.data;
   const monthLabel = new Intl.DateTimeFormat("en-IN", { timeZone, month: "long", year: "numeric" }).format(clock);
   const revenueChange = data && data.previousMonthRevenue > 0
@@ -69,9 +71,9 @@ export function Dashboard({ name = "Admin" }: { name?: string }) {
       <div className="mx-auto max-w-[1500px] p-4 md:p-8">
         <section className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><p className="mb-2 text-xs font-bold uppercase text-primary">{formatGymDate(clock, timeZone)}</p><h1 className="font-display text-3xl font-bold uppercase md:text-4xl">{active}</h1><p className="mt-2 text-sm text-muted-foreground">Here’s what’s happening at {gymName} today.</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => setActive("Classes")}><CalendarDays size={17}/> Schedule</Button><Button variant="secondary"><Activity size={17}/> Live floor</Button></div></section>
 
-        {active === "Settings" ? <SettingsAdmin/> : active === "Classes" ? <ClassesAdmin timeZone={timeZone} todayKey={todayKey}/> : active === "Memberships" ? <PlansAdmin/> : active === "Members" ? <MembersAdmin/> : active === "Payments" ? <PaymentsAdmin/> : active === "Inactive" ? <InactiveMembers/> : active !== "Overview" ? <ModuleView title={active}/> : <>
+        {active === "Settings" ? <SettingsAdmin/> : active === "Classes" ? <ClassesAdmin timeZone={timeZone} todayKey={todayKey} currency={currency}/> : active === "Memberships" ? <PlansAdmin/> : active === "Members" ? <MembersAdmin/> : active === "Payments" ? <PaymentsAdmin/> : active === "Inactive" ? <InactiveMembers/> : active !== "Overview" ? <ModuleView title={active}/> : <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric icon={CircleDollarSign} label={`Revenue · ${monthLabel}`} value={data ? inr(data.monthlyRevenue) : "—"} note={revenueChange} tone="positive"/>
+            <Metric icon={CircleDollarSign} label={`Revenue · ${monthLabel}`} value={data ? formatMoney(data.monthlyRevenue, currency) : "—"} note={revenueChange} tone="positive"/>
             <Metric icon={Users} label="Active members" value={data ? String(data.activeMembers) : "—"} note="With a current membership" tone="neutral"/>
             <Metric icon={Fingerprint} label="Check-ins today" value={data ? String(data.todayCheckins) : "—"} note="Gym local day" tone="neutral"/>
             <Metric icon={Clock3} label="Expiring in 7 days" value={data ? String(data.expiringMembers) : "—"} note="Renewals due soon" tone="warning"/>
@@ -79,7 +81,7 @@ export function Dashboard({ name = "Admin" }: { name?: string }) {
           {live.isError && <p role="alert" className="mt-3 text-sm text-destructive">Dashboard data could not be refreshed: {live.error instanceof Error ? live.error.message : "Please try again."}</p>}
 
           <section className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_1fr]">
-            <div className="panel p-5 md:p-6"><div className="mb-6 flex items-center justify-between"><div><h2 className="section-title">Revenue pulse</h2><p className="section-subtitle">Verified collections · last 7 days</p></div><span className="text-sm font-bold">{data ? inr(data.weekRevenue) : "—"}</span></div><div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data?.revenuePulse ?? []}><defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.45}/><stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="var(--border)"/><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill:"var(--muted-foreground)",fontSize:12}}/><YAxis hide/><Tooltip contentStyle={{borderRadius:6,border:"1px solid var(--border)",background:"var(--card)"}} formatter={(v)=>[inr(Number(v)),"Revenue"]}/><Area type="monotone" dataKey="amount" stroke="var(--chart-1)" strokeWidth={3} fill="url(#revenueFill)"/></AreaChart></ResponsiveContainer></div></div>
+            <div className="panel p-5 md:p-6"><div className="mb-6 flex items-center justify-between"><div><h2 className="section-title">Revenue pulse</h2><p className="section-subtitle">Verified collections · last 7 days</p></div><span className="text-sm font-bold">{data ? formatMoney(data.weekRevenue, currency) : "—"}</span></div><div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data?.revenuePulse ?? []}><defs><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.45}/><stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="var(--border)"/><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill:"var(--muted-foreground)",fontSize:12}}/><YAxis hide/><Tooltip contentStyle={{borderRadius:6,border:"1px solid var(--border)",background:"var(--card)"}} formatter={(v)=>[formatMoney(Number(v), currency),"Revenue"]}/><Area type="monotone" dataKey="amount" stroke="var(--chart-1)" strokeWidth={3} fill="url(#revenueFill)"/></AreaChart></ResponsiveContainer></div></div>
             <div className="panel overflow-hidden"><div className="flex items-start justify-between p-5 md:p-6"><div><h2 className="section-title">Today’s classes</h2><p className="section-subtitle">{data?.classBookings ?? 0} athletes booked</p></div><Button size="sm" variant="ghost" onClick={() => setActive("Classes")}>View all</Button></div><div className="divide-y divide-border">{(data?.todayClasses ?? []).map(c=><div key={c.id} className="flex items-center gap-4 px-5 py-3.5"><div className="w-12"><p className="text-sm font-bold">{c.time}</p><p className="text-[11px] text-muted-foreground">{c.duration} min</p></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{c.name}</p><p className="text-xs text-muted-foreground">{c.coach}</p></div><div className="text-right"><p className="text-sm font-bold">{c.booked}/{c.capacity}</p><div className="mt-1 h-1.5 w-14 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary" style={{width:`${c.capacity ? Math.min(100, c.booked/c.capacity*100) : 0}%`}}/></div></div></div>)}{!data?.todayClasses.length && <p className="px-5 pb-5 text-sm text-muted-foreground">No classes scheduled today.</p>}</div></div>
           </section>
 

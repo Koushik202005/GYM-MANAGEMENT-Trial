@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Dumbbell, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { inr } from "@/lib/sign-out";
+import { formatMoney } from "@/lib/currency";
 
 export const Route = createFileRoute("/_authenticated/receipt/$paymentId")({
   head: () => ({ meta: [
@@ -31,9 +31,9 @@ function ReceiptPage() {
       <header className="flex items-start justify-between border-b border-border pb-6"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-md bg-primary text-primary-foreground"><Dumbbell size={20}/></span><div><p className="font-display text-xl font-bold uppercase">{gym?.gym_name ?? "Forge Fitness"}</p><p className="text-xs text-muted-foreground">{gym?.address}</p></div></div><div className="text-right"><p className="text-xs uppercase text-muted-foreground">Receipt</p><p className="font-bold">{pay.receipt_number}</p><p className="text-xs text-muted-foreground">{pay.paid_at?.slice(0,10)}</p></div></header>
       <section className="grid gap-4 border-b border-border py-6 text-sm sm:grid-cols-2"><div><p className="text-xs uppercase text-muted-foreground">Billed to</p><p className="font-semibold">{p?.display_name}</p><p>{p?.email}</p><p>{p?.phone && `+91 ${p.phone}`}</p><p className="text-muted-foreground">{p?.address}</p></div><div className="sm:text-right"><p className="text-xs uppercase text-muted-foreground">Member ID</p><p className="font-semibold">{pay.members?.member_code}</p><p className="mt-2 text-xs uppercase text-muted-foreground">Payment ID</p><p className="break-all">{pay.provider_payment_id ?? pay.method}</p></div></section>
       <table className="my-6 w-full text-sm"><tbody>
-        <tr><td className="py-1.5">{pay.membership_plans?.name} membership{pay.memberships ? ` (${pay.memberships.starts_on} to ${pay.memberships.ends_on})` : ""}</td><td className="text-right">{inr(pay.base_amount_inr)}</td></tr>
-        {Number(pay.discount_inr) > 0 && <tr className="text-success"><td className="py-1.5">Coupon discount</td><td className="text-right">−{inr(pay.discount_inr)}</td></tr>}
-        <tr className="border-t border-border font-bold"><td className="pt-3">Total paid</td><td className="pt-3 text-right">{inr(pay.amount_inr)}</td></tr>
+        <tr><td className="py-1.5">{pay.membership_plans?.name} membership{pay.memberships ? ` (${pay.memberships.starts_on} to ${pay.memberships.ends_on})` : ""}</td><td className="text-right">{formatMoney(pay.base_amount, pay.currency)}</td></tr>
+        {Number(pay.discount_amount) > 0 && <tr className="text-success"><td className="py-1.5">Coupon discount</td><td className="text-right">−{formatMoney(pay.discount_amount, pay.currency)}</td></tr>}
+        <tr className="border-t border-border font-bold"><td className="pt-3">Total paid</td><td className="pt-3 text-right">{formatMoney(pay.amount, pay.currency)}</td></tr>
       </tbody></table>
       <p className="text-xs text-muted-foreground">Status: {pay.status}. This is a computer-generated receipt.</p>
     </article>

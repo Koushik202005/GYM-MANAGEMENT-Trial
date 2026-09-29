@@ -9,10 +9,10 @@ import { formatGymDate, gymDateTimeToUtc } from "@/lib/gym-time";
 type ClassOption = { id: string; name: string; category: string; default_capacity: number; duration_minutes: number };
 type CoachOption = { id: string; name: string };
 
-export function ClassesAdmin({ timeZone, todayKey }: { timeZone: string; todayKey: string }) {
+export function ClassesAdmin({ timeZone, todayKey, currency }: { timeZone: string; todayKey: string; currency: string }) {
   const queryClient = useQueryClient();
   const [scheduleDate, setScheduleDate] = useState(todayKey);
-  const dashboard = useAdminDashboardData(timeZone, scheduleDate);
+  const dashboard = useAdminDashboardData(timeZone, scheduleDate, currency);
   const templates = useQuery({
     queryKey: ["admin-classes", "templates"],
     queryFn: async () => {
