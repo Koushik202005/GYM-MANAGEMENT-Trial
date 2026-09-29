@@ -243,12 +243,12 @@ export const getGymSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("gym_settings")
-      .select("gym_name, logo_url, app_title, color_theme")
+      .select("gym_name, logo_url, app_title, color_theme, timezone")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green" };
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green", timezone: "Asia/Kolkata" };
   });
 
 // Public web-app branding only; operational settings remain behind authenticated admin flows.
@@ -257,12 +257,12 @@ export const getGymBranding = createServerFn({ method: "GET" })
     const db = await admin();
     const { data, error } = await db
       .from("gym_settings")
-      .select("gym_name, logo_url, app_title, color_theme")
+      .select("gym_name, logo_url, app_title, color_theme, timezone")
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green" };
+    return data ?? { gym_name: "Forge Functional Fitness", logo_url: null, app_title: "Forge Fitness Pal", color_theme: "forge-green", timezone: "Asia/Kolkata" };
   });
 
 export const saveGymSettings = createServerFn({ method: "POST" })

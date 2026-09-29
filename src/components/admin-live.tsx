@@ -18,6 +18,12 @@ export function useAdminRealtime() {
       .on("postgres_changes", { event: "*", schema: "public", table: "members" }, () => qc.invalidateQueries({ queryKey: ["admin-live"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "memberships" }, () => qc.invalidateQueries({ queryKey: ["admin-live"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => qc.invalidateQueries({ queryKey: ["admin-live"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_schedules" }, () => qc.invalidateQueries({ queryKey: ["admin-live"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_bookings" }, () => qc.invalidateQueries({ queryKey: ["admin-live"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "classes" }, () => {
+        qc.invalidateQueries({ queryKey: ["admin-live"] });
+        qc.invalidateQueries({ queryKey: ["admin-classes"] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [qc]);
